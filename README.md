@@ -67,11 +67,25 @@ Follow these instructions to get the application running on your local machine.
 *   Python 3.10 or newer
 *   A virtual environment tool like `venv` (recommended)
 
+## Two User Interfaces
+
+This project offers two different user interfaces to accommodate different use cases:
+
+### Main Tool (Input-Based UI)
+The main version of the tool allows users to input their process models manually or via file upload, and interactively perform change operations. This version is available at the main branch and offers the most flexibility for users to work with custom process models.
+
+**Access:** Run locally by following the instructions below.
+
+### Hardcoded UI Branch
+The hardcoded-ui branch contains a version of the tool with pre-defined process models and operations, designed specifically for demonstration purposes and testing. This version is useful for showcasing specific functionality or for users who want to see examples without having to create their own process models.
+
+**Access:** The online demo at [https://practicalcourse.pythonanywhere.com/](https://practicalcourse.pythonanywhere.com/) uses this version. To use the local version, switch to the `hardcoded-ui` branch in the repository.
+
 ### Installation & Setup
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/INSM-TUM-Teaching/business-process-redesign.git
+    git clone https://github.com/INSM-TUM/business-process-redesign.git
     cd business-process-redesign
     ```
 
@@ -91,8 +105,16 @@ Follow these instructions to get the application running on your local machine.
     pip install -r requirements.txt
     ```
 
-4.  **Run the application:**
+4.  **Choose and run the desired UI version:**
+
+    **Main Tool (Input-Based UI):**
     ```bash
+    python run.py
+    ```
+
+    **Hardcoded UI Branch:**
+    ```bash
+    git checkout hardcoded-ui
     python run.py
     ```
 
