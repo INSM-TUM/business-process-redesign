@@ -1,4 +1,4 @@
-from typing import List, Tuple, Set
+from typing import List, Tuple, Set, Optional
 from itertools import chain, combinations, permutations
 from adjacency_matrix import AdjacencyMatrix
 from dependencies import (
@@ -11,9 +11,124 @@ from dependencies import (
 from constraint_logic import check_temporal_relationship, check_existential_relationship
 
 
+def modify_dependency(
+    matrix: AdjacencyMatrix,
+    from_activity: str,
+    to_activity: str,
+    temporal_dep: Optional[TemporalType],
+    existential_dep: Optional[ExistentialType],
+    temporal_direction: Optional[Direction] = None,
+    existential_direction: Optional[Direction] = None,
+) -> AdjacencyMatrix:
+    """
+    Modify a dependency with activities which are part of the process:
+    1. Check that activities from_activity and to_activity are part of activities
+    2. Search for dependency and change the old dependency to the new activity
+
+    Args:
+        matrix: The input adjacency matrix
+        from_activity: The name of the activity from which the depenency is seen
+        to_activity: The name of the activity to which the dependency is seen
+        exist_dependency: Existential dependency which should become the new one
+
+    Returns:
+        A new adjacency matrix with the adapted dependency
+
+    Raises:
+        ValueError: If from_activity not found
+        ValueError: If to_activity not found in matrix
+    """
+
+    activities = matrix.get_activities()
+    dependencies = matrix.get_dependencies()
+
+    if from_activity not in activities:
+        raise ValueError(f"Activity {from_activity} not found in matrix")
+
+    if to_activity not in activities:
+        raise ValueError(f"Activity {to_activity} not found in matrix")
+
+    new_matrix = AdjacencyMatrix(activities)
+
+    for (from_act, to_act), (
+        temporal_dependency,
+        existential_dependency,
+    ) in dependencies.items():
+        if from_act == from_activity and to_act == to_activity:
+            if existential_dep:
+                direction = (
+                    existential_direction
+                    if existential_direction is not None
+                    else existential_dependency.direction
+                )
+                existential_dependency = ExistentialDependency(
+                    existential_dep, direction=direction
+                )
+            if temporal_dep:
+                direction = (
+                    temporal_direction
+                    if temporal_direction is not None
+                    else temporal_dependency.direction
+                )
+                temporal_dependency = TemporalDependency(
+                    temporal_dep, direction=direction
+                )
+        elif from_act == to_activity and to_act == from_activity:
+            if existential_dep:
+                if (
+                    existential_direction is not None
+                    and existential_direction != Direction.BOTH
+                ):
+                    existential_direction = (
+                        Direction.FORWARD
+                        if existential_direction == Direction.BACKWARD
+                        else Direction.BACKWARD
+                    )
+                direction = (
+                    existential_direction
+                    if existential_direction is not None
+                    else existential_dependency.direction
+                )
+                existential_dependency = ExistentialDependency(
+                    existential_dep, direction=direction
+                )
+            if temporal_dep:
+                if (
+                    temporal_direction is not None
+                    and temporal_direction != Direction.BOTH
+                ):
+                    temporal_direction = (
+                        Direction.FORWARD
+                        if temporal_direction == Direction.BACKWARD
+                        else Direction.BACKWARD
+                    )
+                direction = (
+                    temporal_direction
+                    if temporal_direction is not None
+                    else temporal_dependency.direction
+                )
+                temporal_dependency = TemporalDependency(
+                    temporal_dep, direction=direction
+                )
+
+        new_matrix.add_dependency(
+            from_act, to_act, temporal_dependency, existential_dependency
+        )
+
+    from optimized_acceptance_variants import (
+        generate_optimized_acceptance_variants as generate_acceptance_variants,
+    )
+    from variants_to_matrix import variants_to_matrix
+
+    variants = generate_acceptance_variants(new_matrix)
+    new_matrix = variants_to_matrix(variants, matrix.activities)
+
+    return new_matrix
+
+
 def _powerset(iterable):
     s = list(iterable)
-    return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
+    return chain.from_iterable(combinations(s, r) for r in range(len(s) + 1))
 
 
 def _convert_direct_to_eventual(matrix: AdjacencyMatrix) -> AdjacencyMatrix:
@@ -34,7 +149,9 @@ def _convert_direct_to_eventual(matrix: AdjacencyMatrix) -> AdjacencyMatrix:
     for (from_act, to_act), (temporal_dep, existential_dep) in dependencies.items():
         # Convert DIRECT to EVENTUAL
         if temporal_dep.type == TemporalType.DIRECT:
-            temporal_dep = TemporalDependency(TemporalType.EVENTUAL, direction=temporal_dep.direction)
+            temporal_dep = TemporalDependency(
+                TemporalType.EVENTUAL, direction=temporal_dep.direction
+            )
 
         new_matrix.add_dependency(from_act, to_act, temporal_dep, existential_dep)
 
@@ -42,9 +159,7 @@ def _convert_direct_to_eventual(matrix: AdjacencyMatrix) -> AdjacencyMatrix:
 
 
 def _validate_existential_for_subset(
-    subset: Tuple[str, ...],
-    dependencies: dict,
-    all_activities: List[str]
+    subset: Tuple[str, ...], dependencies: dict, all_activities: List[str]
 ) -> bool:
     """
     Check if a subset satisfies all existential dependencies.
@@ -67,7 +182,7 @@ def _validate_existential_for_subset(
             source_present,
             target_present,
             existential_dep.type,
-            existential_dep.direction
+            existential_dep.direction,
         ):
             return False
 
@@ -75,8 +190,7 @@ def _validate_existential_for_subset(
 
 
 def _validate_temporal_for_permutation(
-    permutation: Tuple[str, ...],
-    dependencies: dict
+    permutation: Tuple[str, ...], dependencies: dict
 ) -> bool:
     """
     Check if a permutation satisfies all temporal dependencies.
@@ -98,10 +212,7 @@ def _validate_temporal_for_permutation(
             target_pos = position_map[to_act]
 
             if not check_temporal_relationship(
-                source_pos,
-                target_pos,
-                temporal_dep.type,
-                temporal_dep.direction
+                source_pos, target_pos, temporal_dep.type, temporal_dep.direction
             ):
                 return False
 
@@ -109,9 +220,7 @@ def _validate_temporal_for_permutation(
 
 
 def _compare_matrices(
-    original: AdjacencyMatrix,
-    modified: AdjacencyMatrix,
-    modification_set: set
+    original: AdjacencyMatrix, modified: AdjacencyMatrix, modification_set: set
 ) -> List[Tuple[str, str]]:
     """
     Compare two matrices and return list of changed dependency cells.
@@ -134,7 +243,7 @@ def _compare_matrices(
 
     all_pairs = set(original_deps.keys()) | set(modified_deps.keys())
 
-    for (from_act, to_act) in sorted(all_pairs):
+    for from_act, to_act in sorted(all_pairs):
         original_dep = original_deps.get((from_act, to_act))
         modified_dep = modified_deps.get((from_act, to_act))
 
@@ -149,9 +258,17 @@ def _compare_matrices(
 
                 # If temporal differs but one is INDEPENDENCE and one is None, and existential is same
                 if orig_exist == mod_exist:
-                    if (orig_temp and orig_temp.type == TemporalType.INDEPENDENCE and mod_temp is None):
+                    if (
+                        orig_temp
+                        and orig_temp.type == TemporalType.INDEPENDENCE
+                        and mod_temp is None
+                    ):
                         continue  # Not a real change
-                    if (mod_temp and mod_temp.type == TemporalType.INDEPENDENCE and orig_temp is None):
+                    if (
+                        mod_temp
+                        and mod_temp.type == TemporalType.INDEPENDENCE
+                        and orig_temp is None
+                    ):
                         continue  # Not a real change
 
             changed_cells.append((from_act, to_act))
@@ -162,7 +279,7 @@ def _compare_matrices(
 def _format_contradiction_error(
     valid_subsets: List[Tuple[str, ...]],
     valid_permutations: List[Tuple[str, ...]],
-    modifications: List[Tuple[str, str, TemporalDependency, ExistentialDependency]]
+    modifications: List[Tuple[str, str, TemporalDependency, ExistentialDependency]],
 ) -> str:
     """
     Format a detailed error message when contradictions are detected.
@@ -181,7 +298,9 @@ def _format_contradiction_error(
     if not valid_subsets:
         error_msg += "Issue: Existential dependency contradictions detected.\n"
         error_msg += "The provided modifications create existential constraints that cannot be satisfied.\n"
-        error_msg += f"Attempted modifications: {len(modifications)} dependency/dependencies\n"
+        error_msg += (
+            f"Attempted modifications: {len(modifications)} dependency/dependencies\n"
+        )
     elif not valid_permutations:
         error_msg += "Issue: Temporal dependency contradictions detected.\n"
         error_msg += "The provided modifications create temporal constraints that cannot be satisfied.\n"
@@ -193,7 +312,7 @@ def _format_contradiction_error(
 
 def modify_dependencies(
     matrix: AdjacencyMatrix,
-    modifications: List[Tuple[str, str, TemporalDependency, ExistentialDependency]]
+    modifications: List[Tuple[str, str, TemporalDependency, ExistentialDependency]],
 ) -> Tuple[AdjacencyMatrix, List[Tuple[str, str]]]:
     """
     Modify multiple dependencies in the adjacency matrix using a variant-based algorithm.
@@ -239,11 +358,15 @@ def modify_dependencies(
     modified_deps = matrix.get_dependencies().copy()
 
     # (A) Convert all DIRECT temporal dependencies to EVENTUAL
-    for (from_act, to_act), (temporal_dep, existential_dep) in list(modified_deps.items()):
+    for (from_act, to_act), (temporal_dep, existential_dep) in list(
+        modified_deps.items()
+    ):
         if temporal_dep.type == TemporalType.DIRECT:
             modified_deps[(from_act, to_act)] = (
-                TemporalDependency(TemporalType.EVENTUAL, direction=temporal_dep.direction),
-                existential_dep
+                TemporalDependency(
+                    TemporalType.EVENTUAL, direction=temporal_dep.direction
+                ),
+                existential_dep,
             )
 
     # (B) Apply provided modifications
@@ -254,8 +377,12 @@ def modify_dependencies(
             existing_temporal, existing_existential = modified_deps[(from_act, to_act)]
 
             # Use the modification's temporal and existential types and directions
-            new_temporal = TemporalDependency(temporal_dep.type, direction=temporal_dep.direction)
-            new_existential = ExistentialDependency(existential_dep.type, direction=existential_dep.direction)
+            new_temporal = TemporalDependency(
+                temporal_dep.type, direction=temporal_dep.direction
+            )
+            new_existential = ExistentialDependency(
+                existential_dep.type, direction=existential_dep.direction
+            )
 
             # Update the forward dependency
             modified_deps[(from_act, to_act)] = (new_temporal, new_existential)
@@ -263,14 +390,35 @@ def modify_dependencies(
             # Also update reverse dependency if it exists
             if (to_act, from_act) in modified_deps:
                 # Create reverse dependencies with inverted directions
-                reverse_temporal_dir = Direction.BOTH if temporal_dep.direction == Direction.BOTH else \
-                                     (Direction.FORWARD if temporal_dep.direction == Direction.BACKWARD else Direction.BACKWARD)
-                reverse_existential_dir = Direction.BOTH if existential_dep.direction == Direction.BOTH else \
-                                        (Direction.FORWARD if existential_dep.direction == Direction.BACKWARD else Direction.BACKWARD)
+                reverse_temporal_dir = (
+                    Direction.BOTH
+                    if temporal_dep.direction == Direction.BOTH
+                    else (
+                        Direction.FORWARD
+                        if temporal_dep.direction == Direction.BACKWARD
+                        else Direction.BACKWARD
+                    )
+                )
+                reverse_existential_dir = (
+                    Direction.BOTH
+                    if existential_dep.direction == Direction.BOTH
+                    else (
+                        Direction.FORWARD
+                        if existential_dep.direction == Direction.BACKWARD
+                        else Direction.BACKWARD
+                    )
+                )
 
-                reverse_temporal = TemporalDependency(temporal_dep.type, direction=reverse_temporal_dir)
-                reverse_existential = ExistentialDependency(existential_dep.type, direction=reverse_existential_dir)
-                modified_deps[(to_act, from_act)] = (reverse_temporal, reverse_existential)
+                reverse_temporal = TemporalDependency(
+                    temporal_dep.type, direction=reverse_temporal_dir
+                )
+                reverse_existential = ExistentialDependency(
+                    existential_dep.type, direction=reverse_existential_dir
+                )
+                modified_deps[(to_act, from_act)] = (
+                    reverse_temporal,
+                    reverse_existential,
+                )
         else:
             # New dependency - use provided directions
             modified_deps[(from_act, to_act)] = (temporal_dep, existential_dep)
@@ -283,17 +431,23 @@ def modify_dependencies(
     # STEP 2-6: Use optimized acceptance variant generation
     # This handles powersets, existential validation, permutations, and temporal validation
     try:
-        from optimized_acceptance_variants import generate_optimized_acceptance_variants as generate_acceptance_variants
+        from optimized_acceptance_variants import (
+            generate_optimized_acceptance_variants as generate_acceptance_variants,
+        )
+
         acceptance_sequences = generate_acceptance_variants(modified_matrix)
     except Exception as e:
         # If variant generation fails, it means there are contradictions
-        raise ValueError(f"Contradictions detected: modification cannot be implemented.\nAdditional modifications required beyond provided set.\n\nIssue: {str(e)}")
+        raise ValueError(
+            f"Contradictions detected: modification cannot be implemented.\nAdditional modifications required beyond provided set.\n\nIssue: {str(e)}"
+        )
 
     if not acceptance_sequences:
         raise ValueError(_format_contradiction_error([], [], modifications))
 
     # STEP 6: Rediscover matrix from acceptance sequences
     from variants_to_matrix import variants_to_matrix
+
     discovered_matrix = variants_to_matrix(acceptance_sequences, activities)
 
     # STEP 7: Compare and identify changes
