@@ -67,7 +67,8 @@ def _dfs(
     temporal_deps: Dict[Tuple[str, str], TemporalDependency],
     cur_activity: str,
     visited: Set[str],
-    visiting: Set[str]
+    visiting: Set[str],
+    target_activity: str = None,
 ):
     """
     Depth first search recursively checking if there are loops in temporal dependencies.
@@ -76,15 +77,20 @@ def _dfs(
         temporal_deps: The temporal dependencies among the activities where there
         cur_activity: The activity to perform the next step for
         visited: Set of activities which have already been visited
+        visiting: Set of activities currently on the DFS stack
+        target_activity: If set, only raise RecursionError when this specific activity
+            is re-encountered (ignores pre-existing cycles in the original matrix).
 
     Returns:
         The set of activities which have been visited.
 
     Raises:
-        RecursionError if there is a loop.
+        RecursionError if there is a loop involving target_activity.
     """
     if cur_activity in visiting:
-        raise RecursionError(f"Cycle detected at '{cur_activity}'")
+        if target_activity is None or cur_activity == target_activity:
+            raise RecursionError(f"Cycle detected at '{cur_activity}'")
+        return
     if cur_activity in visited:
         return
 
@@ -103,7 +109,7 @@ def _dfs(
             continue
         
         if after == cur_activity:
-            _dfs(temporal_deps, before, visited, visiting)
+            _dfs(temporal_deps, before, visited, visiting, target_activity)
     
     visiting.remove(cur_activity)
     visited.add(cur_activity)
@@ -178,8 +184,7 @@ def has_temporal_contradiction(
                 return True
 
     try:
-        for a in activities:
-            _dfs(temporal_deps, a, set(), set())
+        _dfs(temporal_deps, activity, set(), set(), activity)
     except RecursionError:
         return True
 
